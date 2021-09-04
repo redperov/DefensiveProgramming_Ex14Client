@@ -14,6 +14,9 @@ SERVER_INFO_PATH = "server.info"
 # Backup files file path
 BACKUP_FILES_PATH = "backup.info"
 
+# Max packet size
+MAX_PACKET_SIZE = 11 # TODO change to 1024
+
 # Operations
 BACKUP_FILE_OP = 100
 RETRIEVE_FILE_OP = 200
@@ -47,32 +50,27 @@ class Client:
         print(f"User id: {self.user_id}")
 
     def start(self):
-        # TODO handles exceptions
-        response = self.get_backed_up_files()
-        print(response)
+        try:
+            self.get_backed_up_files()
 
-        first_file_to_backup = self.backup_files[0]
-        response = self.back_up_file(first_file_to_backup)
-        print(response)
+            first_file_to_backup = self.backup_files[0]
+            self.back_up_file(first_file_to_backup)
 
-        second_file_to_backup = self.backup_files[1]
-        response = self.back_up_file(second_file_to_backup)
-        print(response)
+            second_file_to_backup = self.backup_files[1]
+            self.back_up_file(second_file_to_backup)
 
-        response = self.get_backed_up_files()
-        print(response)
+            self.get_backed_up_files()
 
-        response = self.get_backed_up_file(first_file_to_backup)
-        print(response)
+            self.get_backed_up_file(first_file_to_backup, "tmp")
 
-        # TODO save only the payload
-        self.save_local_file(response, "tmp")
+            # TODO save only the payload
+            # self.save_local_file(payload, "tmp")
 
-        response = self.delete_backed_up_file(first_file_to_backup)
-        print(response)
+            self.delete_backed_up_file(first_file_to_backup)
 
-        response = self.get_backed_up_file(first_file_to_backup)
-        print(response)
+            self.get_backed_up_file(first_file_to_backup, "tmp")
+        except Exception as e:
+            print("Error occurred:", e)
 
         # version = 1
         # op = 100
@@ -103,15 +101,19 @@ class Client:
             status = struct.unpack("<H", sock.recv(2))[0]
 
             if status == ALL_FILES_RETRIEVED:
-                return self.read_response_with_full_data(sock)
+                filename, payload = self.read_response_list_all_files(sock)
+                print(f"Server response:\nFilename: {filename}\nPayload:\n{payload}")
+                return filename, payload
             elif status == USER_HAS_NO_FILES:
-                return "No files backed up in the server"
+                print("No files backed up in the server")
+                return None
             elif status == GENERAL_ERROR:
-                return "An error occurred in the server"
+                print("An error occurred in the server")
+                return None
             else:
                 raise ValueError(f"Illegal response status: {status}")
 
-    def get_backed_up_file(self, filename):
+    def get_backed_up_file(self, filename, output_file):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((self.server_host, self.server_port))
 
@@ -126,11 +128,15 @@ class Client:
             status = struct.unpack("<H", sock.recv(2))[0]
 
             if status == FILE_RETRIEVED:
-                return self.read_response_with_full_data(sock)
+                filename = self.read_response_with_retrieved_file(sock, output_file)
+                print(f"Server response:\nFilename: {filename}\nPayload saved to: {output_file}")
+                return filename
             elif status == FILE_NOT_FOUND:
-                return "File not found" + self.read_response_with_filename(sock)
+                print("File not found: " + self.read_response_with_filename(sock))
+                return None
             elif status == GENERAL_ERROR:
-                return "An error occurred in the server"
+                print("An error occurred in the server")
+                return None
             else:
                 raise ValueError(f"Illegal response status: {status}")
 
@@ -155,9 +161,9 @@ class Client:
             status = struct.unpack("<H", sock.recv(2))[0]
 
             if status == FILE_MODIFIED:
-                return self.read_response_with_filename(sock)
+                print("File saved: " + self.read_response_with_filename(sock))
             elif status == GENERAL_ERROR:
-                return "An error occurred in the server"
+                print("An error occurred in the server")
             else:
                 raise ValueError(f"Illegal response status: {status}")
 
@@ -176,11 +182,11 @@ class Client:
             status = struct.unpack("<H", sock.recv(2))[0]
 
             if status == FILE_MODIFIED:
-                return self.read_response_with_filename(sock)
+                print("File deleted: " + self.read_response_with_filename(sock))
             elif status == FILE_NOT_FOUND:
-                return "File not found" + self.read_response_with_filename(sock)
+                print("File not found: " + self.read_response_with_filename(sock))
             elif status == GENERAL_ERROR:
-                return "An error occurred in the server"
+                return print("An error occurred in the server")
             else:
                 raise ValueError(f"Illegal response status: {status}")
 
@@ -220,24 +226,56 @@ class Client:
         name_len = struct.unpack("<H", sock.recv(2))[0]
         filename = struct.unpack(f"<{name_len}s", sock.recv(name_len))[0].decode('utf-8')
 
-        return f"Filename: {filename}"
+        return filename
 
     @staticmethod
-    def read_response_with_full_data(sock):
+    def read_response_with_retrieved_file(sock, output_file):
         # Read the filename
         name_len = struct.unpack("<H", sock.recv(2))[0]
         filename = struct.unpack(f"<{name_len}s", sock.recv(name_len))[0].decode('utf-8')
 
         # Read the payload
         size = struct.unpack("<I", sock.recv(4))[0]
+        data_counter = 0
+
+        with open(output_file, "w") as file:
+            while True:
+                data = sock.recv(MAX_PACKET_SIZE)
+                data_counter += len(data)
+                if not data or data_counter > size:
+                    break
+                file.write(data.decode("utf-8"))
+
+        # payload = ""
+        # curr_offset = 0
+
+        # while True:
+        #     if (size - curr_offset) <= 0:
+        #         break
+        #     next_packet_size = min(size - curr_offset, MAX_PACKET_SIZE)
+        #     response = struct.unpack(f"<{next_packet_size}s", sock.recv(size))[0].decode('utf-8')
+        #     payload += response
+        #     curr_offset += next_packet_size
 
         # TODO read in chunks (should probably print straight away)
-        payload = struct.unpack(f"<{size}s", sock.recv(size))[0].decode('utf-8')
+        # payload = struct.unpack(f"<{size}s", sock.recv(size))[0].decode('utf-8')
 
-        return f"Filename: {filename}\nPayload:\n {payload}"
+        return filename
 
     @staticmethod
-    def save_local_file(payload, destination_path):
-        with open(destination_path, "w") as file:
-            file.write(payload)
+    def read_response_list_all_files(sock):
+        # Read the filename
+        name_len = struct.unpack("<H", sock.recv(2))[0]
+        filename = struct.unpack(f"<{name_len}s", sock.recv(name_len))[0].decode('utf-8')
+
+        # Read the payload
+        size = struct.unpack("<I", sock.recv(4))[0]
+        payload = struct.unpack(f"<{size}s", sock.recv(size))[0].decode('utf-8')
+
+        return filename, payload
+
+    # @staticmethod
+    # def save_local_file(payload, destination_path):
+    #     with open(destination_path, "w") as file:
+    #         file.write(payload)
 
