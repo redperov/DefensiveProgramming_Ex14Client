@@ -40,10 +40,16 @@ GENERAL_ERROR = 1003
 class Client:
     def __init__(self):
         # Get the server's host and port
-        self.server_host, self.server_port = self.read_server_info()
+        try:
+            self.server_host, self.server_port = self.read_server_info()
+        except Exception as e:
+            raise ValueError("Failed reading server info", e)
 
         # Get the backup files
-        self.backup_files = self.read_backup_files()
+        try:
+            self.backup_files = self.read_backup_files()
+        except Exception as e:
+            raise ValueError("Failed reading backup files", e)
 
         # Client version
         self.version = VERSION
@@ -79,6 +85,7 @@ class Client:
         except Exception as e:
             print("Error occurred:", e)
 
+    # Retrieves all the user's backed up file names from the server
     def get_backed_up_files(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((self.server_host, self.server_port))
@@ -103,6 +110,7 @@ class Client:
             else:
                 raise ValueError(f"Illegal response status: {status}")
 
+    # Retrieves the user's file from the server and saves the file contents into an output file
     def get_backed_up_file(self, filename, output_file):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((self.server_host, self.server_port))
@@ -129,6 +137,7 @@ class Client:
             else:
                 raise ValueError(f"Illegal response status: {status}")
 
+    # Backs up the user's file in the server
     def back_up_file(self, filename):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((self.server_host, self.server_port))
@@ -161,6 +170,7 @@ class Client:
             else:
                 raise ValueError(f"Illegal response status: {status}")
 
+    # Deletes a user's file from the server
     def delete_backed_up_file(self, filename):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((self.server_host, self.server_port))
@@ -215,6 +225,7 @@ class Client:
             raise ValueError(f"The user must have at least {MIN_NUM_OF_USER_FILES} to perform the exercise logic")
         return file_names
 
+    # Reads a response from the server that contains up to a filename
     @staticmethod
     def read_response_with_filename(sock):
 
@@ -224,6 +235,7 @@ class Client:
 
         return filename
 
+    # Reads a response from the server that contains a file
     @staticmethod
     def read_response_with_retrieved_file(sock, output_file):
         # Read the filename
@@ -244,6 +256,7 @@ class Client:
 
         return filename
 
+    # Read a response from the server that holds a list of files names
     @staticmethod
     def read_response_list_all_files(sock):
         # Read the filename
@@ -256,6 +269,7 @@ class Client:
 
         return filename, payload
 
+    # Retrieves the size of the file in the given path
     @staticmethod
     def get_file_size(path):
         counter = 0
@@ -263,4 +277,3 @@ class Client:
             while file.read(1):
                 counter += 1
         return counter
-
